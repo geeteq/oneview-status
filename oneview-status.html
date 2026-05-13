@@ -49,11 +49,12 @@
 
 <script>
   const STORAGE_KEY = "oneview-urls";
+  const DEFAULT_URLS = "https://appliance1.com\nhttps://appliance3.com";
   const urlsEl = document.getElementById("urls");
   const tableEl = document.getElementById("results");
   const tbodyEl = tableEl.querySelector("tbody");
 
-  urlsEl.value = localStorage.getItem(STORAGE_KEY) || "";
+  urlsEl.value = localStorage.getItem(STORAGE_KEY) || DEFAULT_URLS;
 
   document.getElementById("check").addEventListener("click", run);
 
