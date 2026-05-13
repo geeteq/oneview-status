@@ -27,8 +27,9 @@
 <h1>HPE OneView Appliance Status</h1>
 <p class="note">
   Enter one appliance URL per line (e.g. <code>https://oneview1.example.com</code>).
-  Browsers block cross-origin requests to self-signed appliances by default —
-  if a known-good appliance shows red, open its URL in a new tab once and accept the certificate, then re-check.
+  Requires the local proxy to be running: <code>node proxy.js</code>. The proxy
+  fetches <code>/rest/version</code> from each appliance while ignoring TLS
+  certificate errors (OneView appliances typically use self-signed certs).
 </p>
 
 <textarea id="urls" placeholder="https://oneview1.example.com&#10;https://oneview2.example.com"></textarea>
@@ -76,43 +77,44 @@
     });
   }
 
+  const PROXY_BASE = "http://127.0.0.1:8765";
+
   async function checkAppliance(url, tr) {
     const base = url.replace(/\/+$/, "");
-    const versionUrl = base + "/rest/version";
+    const proxyUrl = `${PROXY_BASE}/version?target=${encodeURIComponent(base)}`;
     const statusCell = tr.querySelector(".status");
-    const dot = tr.querySelector(".dot");
     const versionCell = tr.querySelector(".version");
 
+    let res;
     try {
-      const res = await fetch(versionUrl, {
-        method: "GET",
-        headers: { "Accept": "application/json", "X-API-Version": "120" },
-        mode: "cors",
-        cache: "no-store",
-        redirect: "follow"
-      });
+      res = await fetch(proxyUrl, { cache: "no-store" });
+    } catch {
+      mark(tr, "down", statusCell, "proxy unreachable (is node proxy.js running?)");
+      versionCell.textContent = "—";
+      return;
+    }
 
-      let version = null;
-      if (res.status === 200) {
-        try {
-          const data = await res.json();
-          if (data && data.currentVersion) {
-            version = `currentVersion ${data.currentVersion}` +
-              (data.minimumVersion ? ` (min ${data.minimumVersion})` : "");
-          }
-        } catch { /* non-JSON body */ }
-      }
+    let data;
+    try { data = await res.json(); }
+    catch {
+      mark(tr, "down", statusCell, `proxy returned non-JSON (HTTP ${res.status})`);
+      versionCell.textContent = "—";
+      return;
+    }
 
-      if (version) {
-        mark(tr, "up", statusCell, "200 OK");
-        versionCell.textContent = version;
-      } else {
-        mark(tr, "warn", statusCell,
-          res.status === 200 ? "200 OK, no version" : `HTTP ${res.status}, no version`);
-        versionCell.textContent = "—";
-      }
-    } catch (err) {
-      mark(tr, "down", statusCell, "unreachable / blocked");
+    if (data.error) {
+      mark(tr, "down", statusCell, data.error);
+      versionCell.textContent = "—";
+      return;
+    }
+
+    const v = data.body && data.body.currentVersion;
+    if (data.status === 200 && v) {
+      mark(tr, "up", statusCell, "200 OK");
+      versionCell.textContent = `currentVersion ${v}` +
+        (data.body.minimumVersion ? ` (min ${data.body.minimumVersion})` : "");
+    } else {
+      mark(tr, "warn", statusCell, `HTTP ${data.status}, no version`);
       versionCell.textContent = "—";
     }
   }
